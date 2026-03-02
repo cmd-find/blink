@@ -4,8 +4,6 @@ A Chrome extension that replaces the native Cmd+F (Ctrl+F on Windows) find bar w
 
 No backend. No account. No data leaves your browser except the direct API call you authorize.
 
----
-
 ## Requirements
 
 - Google Chrome (or any Chromium-based browser that supports Manifest V3)
@@ -13,8 +11,6 @@ No backend. No account. No data leaves your browser except the direct API call y
   - [OpenAI](https://platform.openai.com/api-keys)
   - [Anthropic](https://console.anthropic.com/settings/keys)
   - [Google AI Studio](https://aistudio.google.com/app/apikey)
-
----
 
 ## Installation
 
@@ -42,8 +38,6 @@ Click "Load unpacked" and select the `cmd-find` directory (the folder containing
 
 The extension will appear in your extensions list and is now active on all pages.
 
----
-
 ## Setup
 
 Before using the extension, you need to configure your API key.
@@ -64,15 +58,11 @@ Paste your API key into the key field. The key is stored in `chrome.storage.sync
 
 Click Save. The extension is ready to use.
 
----
-
 ## Usage
 
 Press **Cmd+F** on Mac or **Ctrl+F** on Windows/Linux on any page to open the overlay. Type a question or search query in natural language and press Enter. The response streams in below the input field.
 
 Press **Escape** or click outside the overlay to close it.
-
----
 
 ## Permissions
 
@@ -86,8 +76,6 @@ The extension requests the following permissions:
 | `https://generativelanguage.googleapis.com/*` | Required if using Google |
 
 No other network access is made. No telemetry, no analytics.
-
----
 
 ## Default Models
 
