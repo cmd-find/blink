@@ -92,3 +92,4 @@ You can override the model on the options page by entering any valid model strin
 - [ ] chrome web release
 - [ ] light/dark mode
 - [ ] demo website
+- [ ] save queries after page is closed
