@@ -89,6 +89,6 @@ You can override the model on the options page by entering any valid model strin
 
 ## Roadmap
 
-[] chrome web release
-[] light/dark mode
-[] demo website
+[x] chrome web release
+[x] light/dark mode
+[x] demo website
