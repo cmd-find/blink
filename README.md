@@ -91,9 +91,10 @@ You can override the model on the options page by entering any valid model strin
 
 - [ ] align icons
 - [ ] light/dark mode
-- [ ] demo website
 - [ ] improve markdown rendering
 - [ ] save queries after page is closed
 - [ ] chrome web release
+- [ ] better readme
+- [ ] demo website
 - [ ] edge/firefox
 - [ ] safari (MAYBE)...
