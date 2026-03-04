@@ -113,8 +113,8 @@ async function createOverlay() {
         </svg>
       </button>
       <div id="cmdf-footer-hints">
-        <button id="cmdf-new-btn" title="New thread" aria-label="New thread"><kbd>+</kbd> new</button>
-        <span><kbd class="cmdf-kbd-enter">↵</kbd> search</span>
+        <button id="cmdf-new-btn" class="cmdf-hint" title="New thread" aria-label="New thread"><kbd>+</kbd> new</button>
+        <span class="cmdf-hint"><kbd class="cmdf-kbd-enter">↵</kbd> search</span>
       </div>
     </div>
   `;
