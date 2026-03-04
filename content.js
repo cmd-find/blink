@@ -185,6 +185,14 @@ function onOutsideClick(e) {
 async function showOverlay() {
   if (!overlay) await createOverlay();
   overlay.classList.remove("cmdf-hidden");
+
+  // Apply the user's theme preference
+  const { theme } = await chrome.storage.local.get("theme");
+  const preferLight =
+    theme === "light" ||
+    ((!theme || theme === "system") && window.matchMedia("(prefers-color-scheme: light)").matches);
+  overlay.classList.toggle("cmdf-light", preferLight);
+
   clearSession();
   inputEl.focus();
 }
