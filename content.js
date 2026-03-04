@@ -20,7 +20,7 @@ const PROVIDERS = {
 };
 
 const SYSTEM_PROMPT =
-  "You are a helpful assistant. The user is searching within a web page. Answer their queries using only the provided page content. Be concise and direct. When listing items, always use markdown bullet points (- item). NEVER, EVER use horizontal rules (<hr>) or dividers in your response.";
+  "You are a helpful assistant. The user is searching within a web page. Answer their queries using only the provided page content. Be concise and direct, answering correctly, but with as few sentences as possible. When listing items, always use markdown bullet points (- item). Never use horizontal rules (<hr>) or dividers in your response.";
 
 // ─── Page text extraction ─────────────────────────────────────────────────────
 
@@ -45,7 +45,10 @@ function fetchCSS() {
   try {
     cssFetchPromise = fetch(chrome.runtime.getURL("overlay.css"))
       .then((r) => r.text())
-      .then((css) => { overlayCSSText = css; return css; })
+      .then((css) => {
+        overlayCSSText = css;
+        return css;
+      })
       .catch(() => "");
   } catch (_) {
     cssFetchPromise = Promise.resolve("");
@@ -69,8 +72,8 @@ let streamBuffer = "";
 
 // Query history — persists across overlay open/close, max 10 entries
 let queryHistory = [];
-let historyIndex = -1;  // -1 = not browsing; 0 = most recent entry
-let historyDraft = "";  // saves in-progress input when user starts navigating
+let historyIndex = -1; // -1 = not browsing; 0 = most recent entry
+let historyDraft = ""; // saves in-progress input when user starts navigating
 
 async function createOverlay() {
   if (overlay) return;
@@ -190,7 +193,8 @@ async function showOverlay() {
   const { theme } = await chrome.storage.local.get("theme");
   const preferLight =
     theme === "light" ||
-    ((!theme || theme === "system") && window.matchMedia("(prefers-color-scheme: light)").matches);
+    ((!theme || theme === "system") &&
+      window.matchMedia("(prefers-color-scheme: light)").matches);
   overlay.classList.toggle("cmdf-light", preferLight);
 
   clearSession();
@@ -212,6 +216,8 @@ function clearSession() {
   conversationTurns = [];
   currentQuery = "";
   streamBuffer = "";
+  activeTurnEl = null;
+  activeResponseEl = null;
   resultsEl.innerHTML = "";
   resultsEl.classList.remove("cmdf-visible", "cmdf-error");
   spinnerEl.classList.remove("cmdf-visible");
@@ -228,155 +234,229 @@ function hideSpinner() {
 
 // ─── Markdown renderer ────────────────────────────────────────────────────────
 
-function escapeHtml(s) {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
+// Appends inline markdown (bold, italic, inline code) as DOM nodes to `parent`.
+// Uses textContent so no HTML escaping is needed.
+function appendInline(parent, text) {
+  // Split on inline code spans first so their contents are never processed
+  const parts = text.split(/(`[^`\n]+`)/g);
+  parts.forEach((part, i) => {
+    if (i % 2 === 1) {
+      const code = document.createElement("code");
+      code.textContent = part.slice(1, -1);
+      parent.appendChild(code);
+      return;
+    }
+    // Process ***bold+italic***, **bold**, *italic* in order
+    const re = /(\*\*\*([^*\n]+)\*\*\*|\*\*([^*\n]+)\*\*|\*([^*\n]+)\*)/g;
+    let last = 0;
+    let m;
+    while ((m = re.exec(part)) !== null) {
+      if (m.index > last) {
+        parent.appendChild(document.createTextNode(part.slice(last, m.index)));
+      }
+      if (m[2] !== undefined) {
+        const strong = document.createElement("strong");
+        const em = document.createElement("em");
+        em.textContent = m[2];
+        strong.appendChild(em);
+        parent.appendChild(strong);
+      } else if (m[3] !== undefined) {
+        const strong = document.createElement("strong");
+        strong.textContent = m[3];
+        parent.appendChild(strong);
+      } else {
+        const em = document.createElement("em");
+        em.textContent = m[4];
+        parent.appendChild(em);
+      }
+      last = re.lastIndex;
+    }
+    if (last < part.length) {
+      parent.appendChild(document.createTextNode(part.slice(last)));
+    }
+  });
 }
 
-function renderMarkdown(raw) {
-  // Split on fenced code blocks first so their contents are never processed
-  const parts = raw.split(/(```[\s\S]*?```)/g);
+// Returns a DocumentFragment with the markdown rendered as real DOM nodes.
+function renderMarkdownToDOM(raw) {
+  const frag = document.createDocumentFragment();
 
-  return parts
-    .map((part, i) => {
-      if (i % 2 === 1) {
-        const inner = part.replace(/^```[^\n]*\n?/, "").replace(/\n?```$/, "");
-        return `<pre><code>${escapeHtml(inner)}</code></pre>`;
+  // Split on fenced code blocks so their contents are never processed
+  const parts = raw.split(/(```[\s\S]*?```)/g);
+  parts.forEach((part, i) => {
+    if (i % 2 === 1) {
+      const pre = document.createElement("pre");
+      const code = document.createElement("code");
+      code.textContent = part
+        .replace(/^```[^\n]*\n?/, "")
+        .replace(/\n?```$/, "");
+      pre.appendChild(code);
+      frag.appendChild(pre);
+      return;
+    }
+
+    part.split(/\n{2,}/).forEach((block) => {
+      block = block.trim();
+      if (!block) return;
+
+      // Horizontal rules — silently dropped per system prompt
+      if (/^(\s*[-*_]\s*){3,}$/.test(block)) return;
+
+      // Setext headings (must check before ATX to avoid --- being an HR)
+      let m;
+      if ((m = block.match(/^(.+)\n={3,}$/))) {
+        const h = document.createElement("h1");
+        appendInline(h, m[1].trim());
+        frag.appendChild(h);
+        return;
+      }
+      if ((m = block.match(/^(.+)\n-{3,}$/))) {
+        const h = document.createElement("h2");
+        appendInline(h, m[1].trim());
+        frag.appendChild(h);
+        return;
       }
 
-      let s = escapeHtml(part);
+      // ATX headings
+      if ((m = block.match(/^(#{1,6})\s+(.+)$/))) {
+        const h = document.createElement(`h${m[1].length}`);
+        appendInline(h, m[2]);
+        frag.appendChild(h);
+        return;
+      }
 
-      // Setext-style headings (Title\n=== or Title\n---) — must come before HR stripper
-      // so the underline isn't mistaken for a horizontal rule
-      s = s.replace(/^(.+)\n={3,}$/gm, "<h1>$1</h1>");
-      s = s.replace(/^(.+)\n-{3,}$/gm, "<h2>$1</h2>");
+      // Unordered list — every non-empty line must start with "- " or "* "
+      const lines = block.split("\n");
+      if (lines.every((l) => !l.trim() || /^[*-] /.test(l))) {
+        const ul = document.createElement("ul");
+        lines.forEach((line) => {
+          const lm = line.match(/^[*-] (.+)$/);
+          if (!lm) return;
+          const li = document.createElement("li");
+          appendInline(li, lm[1]);
+          ul.appendChild(li);
+        });
+        if (ul.children.length) frag.appendChild(ul);
+        return;
+      }
 
-      // Strip horizontal rules (---, ***, ___, and spaced variants like - - -)
-      s = s.replace(/^(\s*[-*_]\s*){3,}$/gm, "");
+      // Paragraph — single newlines become <br>
+      const p = document.createElement("p");
+      lines.forEach((line, idx) => {
+        appendInline(p, line);
+        if (idx < lines.length - 1) p.appendChild(document.createElement("br"));
+      });
+      frag.appendChild(p);
+    });
+  });
 
-      // Inline code
-      s = s.replace(/`([^`\n]+)`/g, "<code>$1</code>");
-
-      // Headers
-      s = s.replace(/^### (.+)$/gm, "<h3>$1</h3>");
-      s = s.replace(/^## (.+)$/gm, "<h2>$1</h2>");
-      s = s.replace(/^# (.+)$/gm, "<h1>$1</h1>");
-
-      // Bold + italic, bold, italic (order matters)
-      s = s.replace(/\*\*\*([^*\n]+)\*\*\*/g, "<strong><em>$1</em></strong>");
-      s = s.replace(/\*\*([^*\n]+)\*\*/g, "<strong>$1</strong>");
-      s = s.replace(/\*([^*\n]+)\*/g, "<em>$1</em>");
-
-      // Unordered list items, then wrap runs in <ul>
-      s = s.replace(/^[*-] (.+)$/gm, "<li>$1</li>");
-      s = s.replace(/((?:<li>[^\n]*<\/li>\n?)+)/g, "<ul>$1</ul>");
-
-      const blocks = s
-        .split(/\n{2,}/)
-        .map((block) => {
-          block = block.trim();
-          if (!block) return "";
-          if (/^<(h[1-6]|ul|ol|pre|blockquote)/.test(block)) return block;
-          // A lone <li> from a blank-line-separated list — wrap it
-          if (block.startsWith("<li>")) return `<ul>${block}</ul>`;
-          return `<p>${block.replace(/\n/g, "<br>")}</p>`;
-        })
-        .join("");
-      // Merge adjacent <ul> tags that were split by blank lines
-      return blocks.replace(/<\/ul>\s*<ul>/g, "");
-    })
-    .join("");
+  return frag;
 }
 
 // ─── Conversation rendering ───────────────────────────────────────────────────
 
-function buildTurnHtml(query, responseHtml, extraClass = "") {
-  return `<div class="cmdf-turn${extraClass ? " " + extraClass : ""}">
-    <p class="cmdf-query-label">${escapeHtml(query)}</p>
-    <div class="cmdf-response">${responseHtml}</div>
-  </div>`;
-}
+// DOM references for the currently-streaming turn
+let activeTurnEl = null;
+let activeResponseEl = null;
 
-function renderConversation() {
-  if (!resultsEl || !currentQuery) return;
+// Create and append a new active turn div for the given query.
+function startTurn(query) {
+  const turn = document.createElement("div");
+  turn.className = "cmdf-turn cmdf-turn-active";
 
-  let html = conversationTurns
-    .map((t) => buildTurnHtml(t.query, renderMarkdown(t.response)))
-    .join("");
+  const label = document.createElement("p");
+  label.className = "cmdf-query-label";
+  label.textContent = query;
+  turn.appendChild(label);
 
-  // Current in-progress turn
-  html += buildTurnHtml(
-    currentQuery,
-    streamBuffer ? renderMarkdown(streamBuffer) : "",
-    "cmdf-turn-active",
-  );
+  const response = document.createElement("div");
+  response.className = "cmdf-response";
+  turn.appendChild(response);
 
+  resultsEl.appendChild(turn);
   resultsEl.classList.add("cmdf-visible");
   resultsEl.classList.remove("cmdf-error");
-  resultsEl.innerHTML = html;
-  resultsEl.scrollTop = resultsEl.scrollHeight;
+
+  activeTurnEl = turn;
+  activeResponseEl = response;
 }
 
+// Called after a stream completes — renders markdown into the active turn and locks it.
+function finalizeCurrentTurn() {
+  if (!activeTurnEl) return;
+
+  if (streamBuffer) {
+    activeResponseEl.textContent = "";
+    activeResponseEl.appendChild(renderMarkdownToDOM(streamBuffer));
+    activeTurnEl.classList.remove("cmdf-turn-active");
+    conversationTurns.push({ query: currentQuery, response: streamBuffer });
+    streamBuffer = "";
+  } else {
+    // No content arrived (e.g. aborted before first chunk) — remove the empty shell
+    activeTurnEl.remove();
+  }
+
+  activeTurnEl = null;
+  activeResponseEl = null;
+  if (resultsEl) resultsEl.scrollTop = resultsEl.scrollHeight;
+}
+
+// During streaming: update plain text. Markdown is applied only on completion.
 function appendChunk(text) {
-  hideSpinner(); // idempotent — safe to call on every chunk
-  resultsEl.classList.remove("cmdf-error");
+  hideSpinner();
   streamBuffer += text;
-  renderConversation();
+  if (activeResponseEl) {
+    activeResponseEl.textContent = streamBuffer;
+  }
+  if (resultsEl) resultsEl.scrollTop = resultsEl.scrollHeight;
 }
 
 function showError(msg) {
   hideSpinner();
-  let html = conversationTurns
-    .map((t) => buildTurnHtml(t.query, renderMarkdown(t.response)))
-    .join("");
-  if (currentQuery) {
-    html += buildTurnHtml(
-      currentQuery,
-      `<p class="cmdf-error-text">${escapeHtml(msg)}</p>`,
-    );
+  const p = document.createElement("p");
+  p.className = "cmdf-error-text";
+  p.textContent = msg;
+  if (activeResponseEl) {
+    activeResponseEl.textContent = "";
+    activeResponseEl.appendChild(p);
+    activeTurnEl?.classList.remove("cmdf-turn-active");
+    activeTurnEl = null;
+    activeResponseEl = null;
   } else {
-    html += `<p class="cmdf-error-text">${escapeHtml(msg)}</p>`;
+    resultsEl.classList.add("cmdf-visible");
+    resultsEl.appendChild(p);
   }
-  resultsEl.classList.add("cmdf-visible");
-  resultsEl.classList.remove("cmdf-error");
-  resultsEl.innerHTML = html;
 }
 
 function showNoKeyMessage() {
   hideSpinner();
-  let html = conversationTurns
-    .map((t) => buildTurnHtml(t.query, renderMarkdown(t.response)))
-    .join("");
-  if (currentQuery) {
-    html += buildTurnHtml(
-      currentQuery,
-      `<p>No API key set. <a id="cmdf-open-settings" href="#">Open settings →</a></p>`,
-    );
+  const p = document.createElement("p");
+  p.appendChild(document.createTextNode("No API key set. "));
+  const a = document.createElement("a");
+  a.textContent = "Open settings →";
+  a.href = "#";
+  a.addEventListener("click", (e) => {
+    e.preventDefault();
+    chrome.runtime.sendMessage({ type: "openOptions" });
+  });
+  p.appendChild(a);
+  if (activeResponseEl) {
+    activeResponseEl.textContent = "";
+    activeResponseEl.appendChild(p);
+    activeTurnEl?.classList.remove("cmdf-turn-active");
+    activeTurnEl = null;
+    activeResponseEl = null;
   } else {
-    html += `<p>No API key set. <a id="cmdf-open-settings" href="#">Open settings →</a></p>`;
+    resultsEl.classList.add("cmdf-visible");
+    resultsEl.appendChild(p);
   }
-  resultsEl.classList.add("cmdf-visible");
-  resultsEl.classList.remove("cmdf-error");
-  resultsEl.innerHTML = html;
-  resultsEl
-    .querySelector("#cmdf-open-settings")
-    ?.addEventListener("click", (e) => {
-      e.preventDefault();
-      chrome.runtime.sendMessage({ type: "openOptions" });
-    });
 }
 
 // ─── Search orchestration ─────────────────────────────────────────────────────
 
 async function handleSearch(query) {
-  // Commit the previous turn before starting a new one
-  if (currentQuery && streamBuffer) {
-    conversationTurns.push({ query: currentQuery, response: streamBuffer });
-    streamBuffer = "";
-  }
+  // Finalize any in-progress turn before starting a new one
+  finalizeCurrentTurn();
 
   currentQuery = query;
   inputEl.value = ""; // Clear input so user can type a follow-up
@@ -389,13 +469,11 @@ async function handleSearch(query) {
   historyIndex = -1;
   historyDraft = "";
 
-  if (currentAbortController) {
-    currentAbortController.abort();
-  }
+  if (currentAbortController) currentAbortController.abort();
   currentAbortController = new AbortController();
 
   showSpinner();
-  renderConversation(); // Show query label while loading
+  startTurn(query); // Create the active turn div and show the query label
 
   let settings;
   try {
@@ -432,7 +510,9 @@ async function handleSearch(query) {
       await streamGoogle(query, pageText, history, apiKey, model, signal);
     } else {
       showError("Unknown provider. Please check your settings.");
+      return;
     }
+    finalizeCurrentTurn(); // Render markdown now that the stream is complete
   } catch (err) {
     if (err.name === "AbortError") return;
     showError("Something went wrong. Please check your API key and try again.");
