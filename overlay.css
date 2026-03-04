@@ -262,14 +262,23 @@
     gap: 14px;
 }
 
+/* Shared layout for all footer hint items (+ new, ↵ search) — edit here to realign */
+.cmdf-hint {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-family: inherit;
+    font-size: 11px;
+    line-height: 1;
+    color: #48484a;
+}
+
+/* Button-specific resets for the "new" hint */
 #cmdf-new-btn {
     background: none;
     border: none;
     padding: 0;
     cursor: pointer;
-    color: #48484a;
-    font-family: inherit;
-    font-size: 11px;
     transition: color 0.15s;
 }
 
@@ -280,11 +289,6 @@
 #cmdf-new-btn:hover kbd {
     border-color: #48484a;
     color: #aeaeb2;
-}
-
-#cmdf-footer span {
-    font-size: 11px;
-    color: #48484a;
 }
 
 #cmdf-footer kbd {
