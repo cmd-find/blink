@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "cmd-find",
-  "version": "2026.03.01",
+  "version": "0.0.1",
   "description": "semantic search on any webpage",
   "permissions": ["storage"],
   "host_permissions": [
@@ -27,8 +27,8 @@
   },
   "options_page": "options.html",
   "icons": {
-    "16": "icons/icon16-nobg.png",
-    "48": "icons/icon48-nobg.png",
-    "128": "icons/icon128-nobg.png"
+    "16": "icons/icon_16.png",
+    "48": "icons/icon_48.png",
+    "128": "icons/icon_128.png"
   }
 }
