@@ -535,10 +535,11 @@ async function handleSearch(query) {
   currentQuery = query;
   inputEl.value = ""; // Clear input so user can type a follow-up
 
-  // Record in history (dedupe consecutive identical queries, cap at 10)
+  // Record in history (dedupe consecutive identical queries, cap at 25)
   if (queryHistory[queryHistory.length - 1] !== query) {
     queryHistory.push(query);
-    if (queryHistory.length > 10) queryHistory.shift();
+    if (queryHistory.length > 25) queryHistory.shift();
+    saveQueryHistory(queryHistory); // fire-and-forget
   }
   historyIndex = -1;
   historyDraft = "";
